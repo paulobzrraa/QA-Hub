@@ -1,0 +1,349 @@
+// QA Hub — modelo de dados da Fase 1 (cenários de teste) e Fase 2 (bugs).
+//
+// SQLite não suporta enums no Prisma; os campos de domínio são String e a
+// validação acontece na borda da API via schemas Zod de @qahub/shared, que são
+// a tradução direta dos `dataValidation` da planilha de origem.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Pessoa do time. Substitui as listas de nomes soltas em cada aba,
+/// eliminando divergências de grafia (`Murilo` vs `Murillo`).
+model Person {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  role   String  @default("QA")
+  active Boolean @default(true)
+
+  suites   TestSuite[]
+  cases    TestCase[]
+  bugs     Bug[]
+  accounts Account[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Uma suíte equivale a uma aba de cenários da planilha,
+/// cruzada com a linha correspondente da aba "2. Progress".
+model TestSuite {
+  id        String    @id @default(cuid())
+  name      String
+  jiraKey   String?
+  platform  String
+  squad     String?
+  status    String    @default("To Do")
+  startDate DateTime?
+  endDate   DateTime?
+  notes     String?
+
+  /// Nome original da aba no xlsx. Garante importação idempotente.
+  sourceSheet String? @unique
+  position    Int     @default(0)
+
+  responsibleId String?
+  responsible   Person? @relation(fields: [responsibleId], references: [id], onDelete: SetNull)
+
+  cases TestCase[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([platform, status])
+}
+
+/// Um cenário de teste — uma linha das abas de cenário.
+model TestCase {
+  id      String    @id @default(cuid())
+  suiteId String
+  suite   TestSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+
+  code        String
+  jiraKey     String?
+  scenario    String?
+  objective   String?
+  bdd         String?
+  automated   Boolean @default(false)
+  environment String?
+  testData    String?
+  qaStatus    String  @default("Backlog")
+  stageStatus String  @default("Backlog")
+  notes       String?
+  position    Int     @default(0)
+
+  responsibleId String?
+  responsible   Person? @relation(fields: [responsibleId], references: [id], onDelete: SetNull)
+
+  /// Substitui a antiga coluna `bugs` de texto livre (US-2.5): cada bug que
+  /// encontrou este cenário fica ligado de verdade, não citado por texto.
+  bugs Bug[]
+
+  /// Substitui a antiga coluna `evidence` de texto livre (US-4.3): print,
+  /// vídeo ou link viram registros de verdade, com o arquivo guardado aqui
+  /// em vez de num link de Drive que expira.
+  evidences Evidence[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([suiteId, code])
+  @@index([qaStatus])
+  @@index([automated])
+}
+
+/// Um bug — Fase 2. Substitui as abas "App/Web Bugs and Fixes" e
+/// "App/Web Bug tracking", que existiam em duplicidade por plataforma.
+model Bug {
+  id       String @id @default(cuid())
+  number   String
+  platform String
+
+  jiraKey     String? @unique
+  relatedUs   String?
+  description String?
+
+  severity String @default("Medium")
+  status   String @default("Open")
+
+  responsibleId String?
+  responsible   Person? @relation(fields: [responsibleId], references: [id], onDelete: SetNull)
+
+  affectedAreaId String?
+  affectedArea   AffectedArea? @relation(fields: [affectedAreaId], references: [id], onDelete: SetNull)
+
+  /// Datas de negócio (vêm da planilha) — distintas de `createdAt`/`updatedAt`,
+  /// que são o carimbo técnico do registro no QA Hub.
+  reportedDate DateTime?
+  fixedDate    DateTime?
+  notes        String?
+
+  /// Cenários que encontraram este bug (N:N — US-2.5). Um bug pode ter sido
+  /// achado testando mais de um cenário, e um cenário pode ter achado mais
+  /// de um bug.
+  cases TestCase[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([platform, number])
+  @@index([platform, status])
+  @@index([severity])
+}
+
+/// Catálogo de áreas afetadas por bug — não é enum fixo em `@qahub/shared`
+/// porque a planilha tinha 25 valores no App e 10 no Web, com sobreposição
+/// parcial, e a lista precisa poder crescer sem alterar código.
+model AffectedArea {
+  id   String @id @default(cuid())
+  name String @unique
+
+  bugs Bug[]
+
+  createdAt DateTime @default(now())
+}
+
+/// Snapshot diário de métricas — histórico para "Evolução no tempo" (US-3.2).
+/// Um registro por dia (`date` é a chave de idempotência, meia-noite UTC);
+/// atualizado por cima ao longo do dia até o dia fechar, nunca duplicado.
+/// Sem cron: o próprio acesso à tela de Métricas (e o start do servidor)
+/// garantem que o snapshot de hoje existe e está atualizado.
+model MetricSnapshot {
+  id             String   @id @default(cuid())
+  date           DateTime @unique
+  totalCases     Int
+  executedCases  Int
+  automatedCases Int
+  openBugs       Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Conta da massa de teste — abas "Users QA" e "Users PRD" (US-4.1).
+///
+/// Nenhuma coluna da planilha serve de chave: o e-mail se repete (duas contas
+/// diferentes usando o mesmo endereço) e o CPF também (duas contas de PRD com
+/// o mesmo CPF), além de ambos vierem em branco em algumas linhas. A
+/// identidade estável entre importações é a origem — aba + linha — no mesmo
+/// espírito do `sourceSheet` de `TestSuite`. Conta criada à mão no QA Hub fica
+/// com os dois campos nulos e nunca é tocada por uma reimportação.
+model TestUser {
+  id String @id @default(cuid())
+
+  email String?
+  /// Somente dígitos, para a busca funcionar independente da máscara.
+  cpf      String?
+  /// Texto puro na Fase 4.1; cifrado em repouso na US-4.2. Nunca sai numa
+  /// listagem — só pelo endpoint dedicado de revelação.
+  password String?
+
+  /// `PF` / `PJ`. Nulo onde a planilha não preencheu.
+  kind        String?
+  /// `QA` / `PRD`.
+  environment String
+  status      String  @default("Ativo")
+  /// Perfil da conta (`Não Sócio`, `limpo`, `sem givex`...). Texto livre de
+  /// propósito: a planilha não tinha `dataValidation` nessa coluna.
+  profile String?
+  notes   String?
+
+  sourceSheet String?
+  sourceRow   Int?
+
+  credentialAccesses CredentialAccess[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sourceSheet, sourceRow])
+  @@index([environment, status])
+}
+
+/// Registro de acesso a senha da massa de teste (US-4.2).
+///
+/// Toda vez que alguém revela ou copia a senha de uma conta, fica uma linha
+/// aqui. O `actor` é nulo por enquanto e é assim de propósito: o QA Hub ainda
+/// não tem login (US-5.1), e preencher esse campo com um nome auto-declarado
+/// daria aparência de responsabilização sem nenhuma verificação por trás —
+/// pior que um branco honesto num registro de auditoria. Até lá guardamos o
+/// que é de fato verificável: quando, de qual origem e por qual cliente.
+model CredentialAccess {
+  id String @id @default(cuid())
+
+  testUserId String
+  testUser   TestUser @relation(fields: [testUserId], references: [id], onDelete: Cascade)
+
+  /// `reveal` (exibir na tela) ou `copy` (copiar sem exibir).
+  action String
+
+  /// Quem estava autenticado (US-5.1). Nulo só nos acessos anteriores ao login.
+  actorId   String?
+  actor     Account? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([testUserId, createdAt])
+  @@index([createdAt])
+}
+
+
+/// Evidência de um cenário — arquivo enviado ou referência externa (US-4.3).
+model Evidence {
+  id     String   @id @default(cuid())
+  caseId String
+  case   TestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  /// `image` / `video` (arquivo enviado), `link` (URL externa) ou
+  /// `reference` (texto que veio da planilha e não é nem arquivo nem URL —
+  /// a coluna `Evidence` original só tinha chave do Jira e nome de arquivo).
+  kind String
+
+  /// URL externa (`link`) ou o texto original (`reference`). Nulo em arquivo.
+  url String?
+
+  /// Arquivo enviado: nome no disco (em `data/evidence/`) e nome original.
+  storedName   String?
+  originalName String?
+  mimeType     String?
+  sizeBytes    Int?
+
+  caption String?
+
+  /// Veio da importação da planilha. Uma reimportação regenera só estes,
+  /// nunca as evidências enviadas por alguém.
+  imported Boolean @default(false)
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+/// Conta de acesso ao QA Hub (US-5.1).
+///
+/// Separada de `Person` de propósito: `Person` é o diretório do time, citado
+/// por ciclos, cenários e bugs — inclusive de gente que nunca vai logar.
+/// `Account` é quem entra no sistema. O vínculo é opcional e é ele que faz o
+/// histórico ("quem exibiu a senha", "quem mudou o status") apontar para uma
+/// pessoa do time e não para um e-mail solto.
+model Account {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  name         String
+  passwordHash String
+
+  /// `viewer` (leitura), `editor` (execução) ou `admin` (administração).
+  role   String  @default("viewer")
+  active Boolean @default(true)
+
+  personId String?
+  person   Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
+
+  sessions           Session[]
+  credentialAccesses CredentialAccess[]
+  changes            ChangeLog[]
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+/// Sessão persistente. Fica no banco (e não só num JWT) para poder ser
+/// revogada — trocar a senha ou desativar a conta derruba o acesso na hora.
+model Session {
+  id        String   @id @default(cuid())
+  /// Hash do token do cookie. O token em si nunca é guardado.
+  tokenHash String   @unique
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+  ipAddress  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([expiresAt])
+}
+
+/// Histórico de alterações (US-5.2).
+///
+/// Uma linha por CAMPO alterado, não por requisição: a pergunta que o time faz
+/// é "por que este status mudou", não "o que aconteceu naquele save".
+///
+/// `oldValue`/`newValue` guardam o texto JÁ RESOLVIDO (nome da pessoa, não o
+/// id). Um registro de auditoria tem que continuar legível depois de a pessoa
+/// ser renomeada ou removida — guardar a chave estrangeira deixaria o
+/// histórico apontando para o que o dado é HOJE, não para o que era na época.
+model ChangeLog {
+  id String @id @default(cuid())
+
+  /// `case`, `bug` ou `suite`.
+  entity   String
+  entityId String
+
+  field    String
+  /// Rótulo do campo em pt-BR, congelado no momento da alteração.
+  label    String
+  oldValue String?
+  newValue String?
+
+  /// Quem alterou. Nulo só para alteração feita por importação ou script.
+  actorId String?
+  actor   Account? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId, createdAt])
+  @@index([createdAt])
+}

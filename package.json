@@ -1,0 +1,20 @@
+{
+  "name": "qahub",
+  "private": true,
+  "version": "1.0.0",
+  "description": "QA Hub - gestao de cenarios de teste, bugs e metricas",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm run dev -w @qahub/api",
+    "dev:web": "npm run dev -w @qahub/web",
+    "db:push": "npm run db:push -w @qahub/api",
+    "import": "npm run import -w @qahub/api",
+    "build": "npm run build -w @qahub/web"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.6.3"
+  },
+  "engines": { "node": ">=20" }
+}
