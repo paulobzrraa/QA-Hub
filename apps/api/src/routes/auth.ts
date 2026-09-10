@@ -16,6 +16,8 @@ const VIEWER_SELECT = {
   active: true,
   personId: true,
   person: { select: { id: true, name: true } },
+  /** Entrou com provisória e ainda precisa trocar (US-6.1). */
+  mustChangePassword: true,
   lastLoginAt: true,
 } as const
 
@@ -133,7 +135,11 @@ export function authRoutes(app: FastifyInstance) {
 
       await prisma.account.update({
         where: { id: viewer.id },
-        data: { passwordHash: await hashPassword(data.newPassword) },
+        data: {
+          passwordHash: await hashPassword(data.newPassword),
+          // Trocou: a provisória morre aqui e a conta destrava (US-6.1).
+          mustChangePassword: false,
+        },
       })
 
       // Trocar a senha tem que expulsar quem estava logado com a antiga.

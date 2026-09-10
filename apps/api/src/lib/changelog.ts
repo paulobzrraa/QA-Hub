@@ -8,7 +8,7 @@ import { prisma } from './db.js'
  * Approved para Approved" a cada save do formulário, e o que interessa some.
  */
 
-export type TrackedEntity = 'case' | 'bug' | 'suite'
+export type TrackedEntity = 'case' | 'bug' | 'suite' | 'account'
 
 /** Como cada campo aparece na linha do tempo. */
 export interface FieldSpec {
@@ -59,6 +59,18 @@ export const BUG_FIELDS: Record<string, FieldSpec> = {
   reportedDate: { label: 'Data de criação', format: formatDate },
   fixedDate: { label: 'Data de correção', format: formatDate },
   notes: { label: 'Notas', format: formatText },
+}
+
+/**
+ * Conta de acesso (US-6.1). `password` nunca guarda valor — só o fato de a
+ * senha ter sido redefinida, com quem e quando. Registrar o valor, ainda que
+ * cifrado, transformaria o histórico numa segunda cópia das credenciais.
+ */
+export const ACCOUNT_FIELDS: Record<string, FieldSpec> = {
+  name: { label: 'Nome' },
+  role: { label: 'Perfil de acesso' },
+  active: { label: 'Ativa', format: formatBoolean('sim', 'não') },
+  personId: { label: 'Pessoa do time' },
 }
 
 export const SUITE_FIELDS: Record<string, FieldSpec> = {
@@ -142,6 +154,32 @@ export async function recordChanges(options: RecordOptions): Promise<number> {
   if (!rows.length) return 0
   await prisma.changeLog.createMany({ data: rows })
   return rows.length
+}
+
+/**
+ * Registra um evento que não é "campo mudou de A para B" — como a redefinição
+ * de senha (US-6.1), onde o valor antigo e o novo não podem ser guardados.
+ */
+export async function recordEvent(options: {
+  entity: TrackedEntity
+  entityId: string
+  field: string
+  label: string
+  description: string
+  actorId: string | null
+}): Promise<void> {
+  await prisma.changeLog.create({
+    data: {
+      kind: 'event',
+      entity: options.entity,
+      entityId: options.entityId,
+      field: options.field,
+      label: options.label,
+      oldValue: null,
+      newValue: options.description,
+      actorId: options.actorId,
+    },
+  })
 }
 
 /**

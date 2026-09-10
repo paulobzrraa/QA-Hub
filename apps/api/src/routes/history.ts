@@ -5,7 +5,7 @@ import { parse, sendError } from '../lib/http.js'
 import { retentionMonths } from '../lib/changelog.js'
 
 const params = z.object({
-  entity: z.enum(['case', 'bug', 'suite']),
+  entity: z.enum(['case', 'bug', 'suite', 'account']),
   id: z.string().min(1),
 })
 
@@ -26,6 +26,7 @@ export function historyRoutes(app: FastifyInstance) {
         take: limit,
         select: {
           id: true,
+          kind: true,
           field: true,
           label: true,
           oldValue: true,

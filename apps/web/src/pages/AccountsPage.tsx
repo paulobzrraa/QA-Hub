@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { UserPlus, Trash2 } from 'lucide-react'
+import { History, KeyRound, Trash2, UserPlus } from 'lucide-react'
 import { ACCESS_ROLE, ACCESS_ROLE_LABEL, type AccessRole } from '@qahub/shared'
-import { useAccounts, useCreateAccount, useDeleteAccount, useUpdateAccount } from '../lib/accounts'
+import {
+  useAccounts, useCreateAccount, useDeleteAccount, useResetPassword, useUpdateAccount,
+} from '../lib/accounts'
 import { useAuth } from '../lib/auth'
 import { usePeople } from '../lib/queries'
-import { Empty, ErrorBanner, Field, Loading, Stat, formatDate } from '../components/ui'
+import { CopyButton, Empty, ErrorBanner, Field, Loading, Stat, formatDate } from '../components/ui'
+import { Timeline } from '../components/Timeline'
+import type { Account, PasswordReset } from '../lib/types'
 
 /**
  * Contas de acesso (US-5.1).
@@ -20,11 +24,15 @@ export function AccountsPage() {
   const create = useCreateAccount()
   const update = useUpdateAccount()
   const remove = useDeleteAccount()
+  const reset = useResetPassword()
 
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'viewer', personId: '' })
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [confirmReset, setConfirmReset] = useState<Account | null>(null)
+  const [resetDone, setResetDone] = useState<PasswordReset | null>(null)
+  const [historyOf, setHistoryOf] = useState<Account | null>(null)
 
-  const error = create.error ?? update.error ?? remove.error
+  const error = create.error ?? update.error ?? remove.error ?? reset.error
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -123,7 +131,7 @@ export function AccountsPage() {
                     <th style={{ width: 170 }}>Perfil</th>
                     <th style={{ width: 110 }}>Ativa</th>
                     <th style={{ width: 130 }}>Último acesso</th>
-                    <th style={{ width: 120 }}>Ações</th>
+                    <th style={{ width: 180 }}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -138,6 +146,9 @@ export function AccountsPage() {
                           <div className="cell-sub">
                             {item.email}
                             {item.person && ` · ${item.person.name}`}
+                            {item.mustChangePassword && (
+                              <span className="pill warn" style={{ marginLeft: 6 }}>senha provisória</span>
+                            )}
                           </div>
                         </td>
                         <td className="tight">
@@ -170,6 +181,23 @@ export function AccountsPage() {
                         </td>
                         <td className="tight small muted">{formatDate(item.lastLoginAt)}</td>
                         <td className="tight">
+                          <div className="toolbar" style={{ flexWrap: 'nowrap' }}>
+                            <button
+                              type="button"
+                              className="btn ghost"
+                              title="Redefinir a senha desta conta"
+                              onClick={() => { setResetDone(null); setConfirmReset(item) }}
+                            >
+                              <KeyRound size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn ghost"
+                              title="Ver o histórico desta conta"
+                              onClick={() => setHistoryOf(item)}
+                            >
+                              <History size={14} />
+                            </button>
                           {confirmDelete === item.id ? (
                             <div className="toolbar">
                               <button type="button" className="btn danger"
@@ -194,6 +222,7 @@ export function AccountsPage() {
                               <Trash2 size={14} />
                             </button>
                           )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -204,6 +233,95 @@ export function AccountsPage() {
           )}
         </div>
       </div>
+
+      {confirmReset && (
+        <div className="drawer-backdrop ev-preview-backdrop"
+          onClick={() => { setConfirmReset(null); setResetDone(null) }} role="presentation">
+          <div className="ev-preview" style={{ maxWidth: 480 }} onClick={(event) => event.stopPropagation()}>
+            <div className="drawer-head">
+              <div>
+                <h2>{resetDone ? 'Senha redefinida' : 'Redefinir senha'}</h2>
+                <p className="subtitle">{confirmReset.name} · {confirmReset.email}</p>
+              </div>
+              <button type="button" className="btn ghost"
+                onClick={() => { setConfirmReset(null); setResetDone(null) }}>Fechar</button>
+            </div>
+
+            <div className="drawer-body">
+              {resetDone ? (
+                <>
+                  <Field label="Senha provisória">
+                    <div className="provisional">
+                      <code>{resetDone.provisionalPassword}</code>
+                      <CopyButton
+                        value={resetDone.provisionalPassword}
+                        label="Copiar"
+                        title="Copiar a senha provisória"
+                      />
+                    </div>
+                  </Field>
+                  {/* O aviso é literal: a senha não é guardada em texto em
+                      lugar nenhum, então recarregar esta tela a perde. */}
+                  <div className="banner warn">
+                    Copie agora. Esta senha aparece uma única vez e não pode ser recuperada — se
+                    perder, basta redefinir de novo.
+                  </div>
+                  <p className="small muted">
+                    {confirmReset.name} entra com ela e o sistema exige a troca imediatamente. Até
+                    trocar, a conta não consegue fazer mais nada.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ marginTop: 0 }}>
+                    Isso gera uma senha provisória para <strong>{confirmReset.name}</strong> e
+                    invalida a senha atual.
+                  </p>
+                  <ul className="small muted">
+                    <li>As sessões abertas dessa conta são encerradas na hora.</li>
+                    <li>A provisória vale para uma entrada e precisa ser trocada em seguida.</li>
+                    <li>Fica registrado no histórico da conta quem redefiniu e quando.</li>
+                  </ul>
+                </>
+              )}
+            </div>
+
+            <div className="drawer-foot">
+              <button type="button" className="btn ghost"
+                onClick={() => { setConfirmReset(null); setResetDone(null) }}>
+                {resetDone ? 'Concluir' : 'Cancelar'}
+              </button>
+              {!resetDone && (
+                <button type="button" className="btn primary" disabled={reset.isPending}
+                  onClick={async () => {
+                    const result = await reset.mutateAsync(confirmReset.id)
+                    setResetDone(result)
+                  }}>
+                  {reset.isPending ? 'Redefinindo…' : 'Redefinir senha'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {historyOf && (
+        <div className="drawer-backdrop ev-preview-backdrop"
+          onClick={() => setHistoryOf(null)} role="presentation">
+          <div className="ev-preview" style={{ maxWidth: 520 }} onClick={(event) => event.stopPropagation()}>
+            <div className="drawer-head">
+              <div>
+                <h2>Histórico da conta</h2>
+                <p className="subtitle">{historyOf.name} · {historyOf.email}</p>
+              </div>
+              <button type="button" className="btn ghost" onClick={() => setHistoryOf(null)}>Fechar</button>
+            </div>
+            <div className="drawer-body">
+              <Timeline entity="account" id={historyOf.id} />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

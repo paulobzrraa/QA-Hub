@@ -92,6 +92,32 @@ export interface Viewer {
   name: string
   role: AccessRole
   personId: string | null
+  /** Entrou com senha provisória e ainda não a trocou (US-6.1). */
+  mustChangePassword: boolean
+}
+
+/**
+ * Senha provisória de uso único (US-6.1).
+ *
+ * Gerada pelo sistema, não escolhida pelo administrador: quem redefine não
+ * precisa inventar (nem reaproveitar) uma senha, e a provisória morre na
+ * primeira troca. Sem `0/O` e `1/l/I`, que se confundem quando alguém dita a
+ * senha por telefone ou copia de um print.
+ */
+const SAFE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+
+export function generateProvisionalPassword(): string {
+  const groups = 4
+  const perGroup = 4
+  const bytes = randomBytes(groups * perGroup)
+  const chars = [...bytes].map((byte) => SAFE_ALPHABET[byte % SAFE_ALPHABET.length])
+
+  const parts: string[] = []
+  for (let index = 0; index < groups; index += 1) {
+    parts.push(chars.slice(index * perGroup, (index + 1) * perGroup).join(''))
+  }
+  // 16 caracteres + hífens: passa com folga do mínimo de 10 do schema.
+  return parts.join('-')
 }
 
 /**
@@ -130,6 +156,7 @@ export async function resolveViewer(request: FastifyRequest): Promise<Viewer | n
     name: session.account.name,
     role: session.account.role as AccessRole,
     personId: session.account.personId,
+    mustChangePassword: session.account.mustChangePassword,
   }
 }
 

@@ -284,6 +284,12 @@ model Account {
   role   String  @default("viewer")
   active Boolean @default(true)
 
+  /// Senha provisória pendente de troca (US-6.1). Enquanto for `true`, a conta
+  /// entra no sistema mas só consegue trocar a própria senha — é isso que faz
+  /// a provisória ser de uso único, e não uma senha permanente escolhida por
+  /// outra pessoa.
+  mustChangePassword Boolean @default(false)
+
   personId String?
   person   Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
 
@@ -331,6 +337,11 @@ model ChangeLog {
   /// `case`, `bug` ou `suite`.
   entity   String
   entityId String
+
+  /// `field` — um campo mudou de um valor para outro.
+  /// `event` — algo aconteceu e não tem "valor anterior" que possa ser
+  /// guardado, como a redefinição de senha (US-6.1).
+  kind     String  @default("field")
 
   field    String
   /// Rótulo do campo em pt-BR, congelado no momento da alteração.

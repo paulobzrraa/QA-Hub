@@ -13,6 +13,7 @@ import { TestUsersPage } from './pages/TestUsersPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { AccountsPage } from './pages/AccountsPage'
 import { LoginPage } from './pages/LoginPage'
+import { ForcePasswordChange } from './pages/ForcePasswordChange'
 import { UserMenu } from './components/UserMenu'
 import { useAuth } from './lib/auth'
 import { Loading } from './components/ui'
@@ -31,6 +32,10 @@ export function App() {
   // renderizar qualquer um dos dois aqui causaria um pisca a cada carregamento.
   if (loading) return <Loading label="Carregando…" />
   if (!account) return <LoginPage />
+
+  // Senha provisória pendente (US-6.1): o servidor recusa todo o resto, então
+  // mostrar o sistema aqui só produziria uma tela cheia de erro 403.
+  if (account.mustChangePassword) return <ForcePasswordChange />
 
   return <Shell isAdmin={can('admin')} pathname={location.pathname} />
 }

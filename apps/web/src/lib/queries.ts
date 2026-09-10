@@ -362,7 +362,7 @@ export function useDeleteEvidence(suiteId: string) {
  * `enabled` evita buscar histórico de painel que nem foi aberto — a lista de
  * cenários renderiza centenas de linhas, e nenhuma delas precisa disso.
  */
-export function useHistory(entity: 'case' | 'bug' | 'suite', id: string | undefined) {
+export function useHistory(entity: 'case' | 'bug' | 'suite' | 'account', id: string | undefined) {
   return useQuery({
     queryKey: ['history', entity, id],
     queryFn: () => api.get<HistoryResult>(`/api/history/${entity}/${id}`),

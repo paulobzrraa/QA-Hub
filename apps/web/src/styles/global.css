@@ -1085,3 +1085,26 @@ tr.row-muted td { opacity: 0.62; }
 }
 
 .tl-arrow { color: var(--text-muted); }
+
+/* Senha provisória exibida uma única vez (US-6.1). Grande e monoespaçada:
+   costuma ser lida em voz alta ou copiada à mão. */
+.provisional {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.provisional code {
+  font-family: var(--mono);
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-strong);
+  user-select: all;
+}
+
+/* Evento no histórico (US-6.1): frase, não par de valores com seta. */
+.tl-event { color: var(--text); }

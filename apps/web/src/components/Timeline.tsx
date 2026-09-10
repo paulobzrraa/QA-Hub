@@ -26,7 +26,7 @@ function value(text: string | null) {
  * real do time: "por que este status mudou". Só o que mudou de valor aparece;
  * salvar o formulário sem alterar nada não gera linha.
  */
-export function Timeline({ entity, id }: { entity: 'case' | 'bug' | 'suite'; id: string }) {
+export function Timeline({ entity, id }: { entity: 'case' | 'bug' | 'suite' | 'account'; id: string }) {
   const history = useHistory(entity, id)
 
   if (history.isLoading) return <Loading label="Carregando histórico…" />
@@ -47,9 +47,17 @@ export function Timeline({ entity, id }: { entity: 'case' | 'bug' | 'suite'; id:
               <span className="tl-when">{moment(entry.createdAt)}</span>
             </div>
             <div className="tl-change">
-              {value(entry.oldValue)}
-              <span className="tl-arrow" aria-label="mudou para">→</span>
-              {value(entry.newValue)}
+              {/* Evento não tem valor anterior — a seta partindo de "vazio"
+                  seria ruído, não informação. */}
+              {entry.kind === 'event' ? (
+                <span className="tl-event">{entry.newValue}</span>
+              ) : (
+                <>
+                  {value(entry.oldValue)}
+                  <span className="tl-arrow" aria-label="mudou para">→</span>
+                  {value(entry.newValue)}
+                </>
+              )}
             </div>
             <div className="cell-sub">
               {entry.actor ? entry.actor.name : 'Importação da planilha'}

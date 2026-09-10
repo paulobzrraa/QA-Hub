@@ -2,7 +2,10 @@ import type { FastifyInstance } from 'fastify'
 import { accountInput, accountUpdate } from '@qahub/shared'
 import { prisma } from '../lib/db.js'
 import { parse, sendError, HttpError } from '../lib/http.js'
-import { assertAllowedEmail, hashPassword, requireRole, revokeSessions } from '../lib/auth.js'
+import {
+  assertAllowedEmail, generateProvisionalPassword, hashPassword, requireRole, revokeSessions,
+} from '../lib/auth.js'
+import { recordChanges, recordEvent, ACCOUNT_FIELDS } from '../lib/changelog.js'
 
 const ACCOUNT_SELECT = {
   id: true,
@@ -12,6 +15,7 @@ const ACCOUNT_SELECT = {
   active: true,
   personId: true,
   person: { select: { id: true, name: true } },
+  mustChangePassword: true,
   lastLoginAt: true,
   createdAt: true,
   _count: { select: { sessions: true } },
@@ -81,10 +85,25 @@ export function accountRoutes(app: FastifyInstance) {
         }
       }
 
+      const before = await prisma.account.findUnique({ where: { id } })
+      if (!before) throw new HttpError(404, 'Conta não encontrada')
+
       const account = await prisma.account.update({
         where: { id },
         data,
         select: ACCOUNT_SELECT,
+      })
+
+      // Promover alguém a administrador é exatamente o tipo de mudança que
+      // alguém vai querer explicar depois — o histórico não pode ter esse
+      // buraco só porque a US pedia apenas o registro da redefinição.
+      await recordChanges({
+        entity: 'account',
+        entityId: id,
+        before,
+        after: data,
+        fields: ACCOUNT_FIELDS,
+        actorId: viewer.id,
       })
 
       // Desativar ou rebaixar tem que valer agora, não quando a sessão vencer.
@@ -95,6 +114,55 @@ export function accountRoutes(app: FastifyInstance) {
       if ((error as { code?: string }).code === 'P2025') {
         return sendError(reply, new HttpError(404, 'Conta não encontrada'))
       }
+      return sendError(reply, error)
+    }
+  })
+
+  /**
+   * Redefine a senha de uma conta (US-6.1).
+   *
+   * Devolve a senha provisória UMA vez, na resposta — ela não é guardada em
+   * texto em lugar nenhum e não há como recuperá-la depois. Quem redefiniu
+   * anota, entrega, e a pessoa troca no primeiro acesso.
+   */
+  app.post('/api/accounts/:id/reset-password', async (request, reply) => {
+    try {
+      const viewer = requireRole(request, 'admin')
+      const { id } = request.params as { id: string }
+
+      const account = await prisma.account.findUnique({
+        where: { id },
+        select: { id: true, name: true, email: true },
+      })
+      if (!account) throw new HttpError(404, 'Conta não encontrada')
+
+      const provisional = generateProvisionalPassword()
+
+      await prisma.account.update({
+        where: { id },
+        data: {
+          passwordHash: await hashPassword(provisional),
+          mustChangePassword: true,
+        },
+      })
+
+      // A senha antiga deixou de valer: sessão aberta com ela também.
+      await revokeSessions(id)
+
+      await recordEvent({
+        entity: 'account',
+        entityId: id,
+        field: 'password',
+        label: 'Senha',
+        description: `redefinida por ${viewer.name}`,
+        actorId: viewer.id,
+      })
+
+      return {
+        account: { id: account.id, name: account.name, email: account.email },
+        provisionalPassword: provisional,
+      }
+    } catch (error) {
       return sendError(reply, error)
     }
   })

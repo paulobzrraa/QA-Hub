@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
-import type { Account } from './types'
+import type { Account, PasswordReset } from './types'
 
 /** Administração de contas de acesso (US-5.1). Só administradores chegam aqui. */
 export function useAccounts() {
@@ -37,6 +37,20 @@ export function useDeleteAccount() {
   const refresh = useAccountsRefresh()
   return useMutation({
     mutationFn: (id: string) => api.delete(`/api/accounts/${id}`),
+    onSuccess: refresh,
+  })
+}
+
+/**
+ * Redefine a senha de uma conta (US-6.1).
+ *
+ * A provisória vem na resposta e só nela — não é guardada em texto em lugar
+ * nenhum. Quem chama tem que mostrá-la na hora; recarregar a tela a perde.
+ */
+export function useResetPassword() {
+  const refresh = useAccountsRefresh()
+  return useMutation({
+    mutationFn: (id: string) => api.post<PasswordReset>(`/api/accounts/${id}/reset-password`, {}),
     onSuccess: refresh,
   })
 }

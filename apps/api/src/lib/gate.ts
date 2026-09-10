@@ -66,6 +66,21 @@ export function registerGate(app: FastifyInstance) {
 
       if (ANY_VIEWER.has(key)) return
 
+      /**
+       * Senha provisória pendente (US-6.1): a conta entra, mas não faz mais
+       * nada além de trocar a senha. É isto que torna a provisória de USO
+       * ÚNICO — sem este bloqueio ela seria só uma senha permanente escolhida
+       * por outra pessoa, que é o problema que a redefinição vem resolver.
+       *
+       * As rotas de trocar senha, sair e "quem sou eu" já passaram acima.
+       */
+      if (request.viewer.mustChangePassword) {
+        throw new HttpError(
+          403,
+          'Defina uma nova senha antes de usar o sistema — a senha atual é provisória.',
+        )
+      }
+
       const extra = EXTRA.find((rule) => rule.method === request.method && rule.pattern.test(path))
       if (extra) {
         requireOrThrow(request.viewer.role, extra.role)

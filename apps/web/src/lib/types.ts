@@ -216,6 +216,8 @@ export interface Account {
   active: boolean
   personId: string | null
   person: { id: string; name: string } | null
+  /** Entrou com senha provisória e ainda precisa trocá-la (US-6.1). */
+  mustChangePassword: boolean
   lastLoginAt: string | null
   createdAt?: string
   _count?: { sessions: number }
@@ -230,6 +232,8 @@ export interface AuthStatus {
 /** Uma alteração registrada (US-5.2). */
 export interface ChangeEntry {
   id: string
+  /** `field` = valor mudou; `event` = algo aconteceu, sem valor anterior. */
+  kind: 'field' | 'event'
   field: string
   /** Rótulo em pt-BR congelado no momento da alteração. */
   label: string
@@ -242,4 +246,10 @@ export interface ChangeEntry {
 export interface HistoryResult {
   entries: ChangeEntry[]
   retentionMonths: number
+}
+
+/** Devolvido UMA vez ao redefinir uma senha (US-6.1) — não é recuperável depois. */
+export interface PasswordReset {
+  account: { id: string; name: string; email: string }
+  provisionalPassword: string
 }
