@@ -1,12 +1,15 @@
 import { useState } from 'react'
-import { History, KeyRound, Trash2, UserPlus } from 'lucide-react'
+import { AlertTriangle, History, KeyRound, Trash2, UserPlus } from 'lucide-react'
 import { ACCESS_ROLE, ACCESS_ROLE_LABEL, type AccessRole } from '@qahub/shared'
 import {
-  useAccounts, useCreateAccount, useDeleteAccount, useResetPassword, useUpdateAccount,
+  useAccounts, useCreateAccount, useDeleteAccount, useLoginAttempts, useResetPassword,
+  useUpdateAccount,
 } from '../lib/accounts'
 import { useAuth } from '../lib/auth'
 import { usePeople } from '../lib/queries'
-import { CopyButton, Empty, ErrorBanner, Field, Loading, Stat, formatDate } from '../components/ui'
+import {
+  Accordion, CopyButton, Empty, ErrorBanner, Field, Loading, Select, Stat, StatusPill, formatDate,
+} from '../components/ui'
 import { Timeline } from '../components/Timeline'
 import type { Account, PasswordReset } from '../lib/types'
 
@@ -17,6 +20,80 @@ import type { Account, PasswordReset } from '../lib/types'
  * aqui está quem entra no sistema. O vínculo opcional entre os dois é o que
  * faz o histórico apontar para uma pessoa, e não para um e-mail solto.
  */
+/**
+ * Tentativas de entrada recentes (US-6.2). Fica recolhida por padrão — é a
+ * tela que alguém abre quando desconfia de um ataque, não o uso do dia a dia.
+ */
+function LoginAttemptsCard() {
+  const [onlyFailed, setOnlyFailed] = useState(true)
+  const attempts = useLoginAttempts(onlyFailed)
+
+  const limits = attempts.data?.limits
+
+  return (
+    <Accordion title="Tentativas de entrada" defaultOpen={false}>
+      <div className="stack">
+        <p className="small muted" style={{ margin: 0 }}>
+          {limits && (
+            <>
+              A partir de {limits.SOFT_THRESHOLD} falhas seguidas a resposta começa a demorar; a
+              partir de {limits.HARD_THRESHOLD}, o endereço ou e-mail fica bloqueado por{' '}
+              {limits.BLOCK_MINUTES} minutos. A contagem olha os últimos {limits.WINDOW_MINUTES}{' '}
+              minutos e zera a cada entrada bem-sucedida.
+            </>
+          )}
+        </p>
+
+        <Select
+          options={['Só recusadas', 'Todas']}
+          value={onlyFailed ? 'Só recusadas' : 'Todas'}
+          onChange={(event) => setOnlyFailed(event.target.value === 'Só recusadas')}
+        />
+
+        {attempts.isError && <ErrorBanner error={attempts.error} />}
+
+        {attempts.isLoading ? (
+          <Loading />
+        ) : !attempts.data?.attempts.length ? (
+          <Empty title="Nenhuma tentativa registrada" />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>E-mail tentado</th>
+                  <th>Origem</th>
+                  <th>Resultado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attempts.data.attempts.map((item) => (
+                  <tr key={item.id}>
+                    <td className="tight small muted">{formatDate(item.createdAt)}</td>
+                    <td className="small">{item.email || <span className="subtle">(vazio)</span>}</td>
+                    <td className="tight small muted">{item.ipAddress}</td>
+                    <td className="tight">
+                      {item.success ? (
+                        <StatusPill status="Approved" />
+                      ) : (
+                        <span className="pill danger">
+                          <AlertTriangle size={11} style={{ verticalAlign: -1, marginRight: 3 }} />
+                          Recusada
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Accordion>
+  )
+}
+
 export function AccountsPage() {
   const { account: me } = useAuth()
   const accounts = useAccounts()
@@ -115,6 +192,8 @@ export function AccountsPage() {
             </div>
           </div>
         </form>
+
+        <LoginAttemptsCard />
 
         <div className="card">
           <div className="card-head"><h2>Contas</h2></div>
@@ -270,6 +349,12 @@ export function AccountsPage() {
                     {confirmReset.name} entra com ela e o sistema exige a troca imediatamente. Até
                     trocar, a conta não consegue fazer mais nada.
                   </p>
+                  {resetDone.clearedAttempts > 0 && (
+                    <p className="small muted">
+                      {resetDone.clearedAttempts} tentativa(s) de entrada recusada(s) foram
+                      apagadas — a conta não fica bloqueada logo depois de você ajudá-la a voltar.
+                    </p>
+                  )}
                 </>
               ) : (
                 <>

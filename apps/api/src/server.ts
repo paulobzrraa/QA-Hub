@@ -18,6 +18,7 @@ import { authRoutes } from './routes/auth.js'
 import { accountRoutes } from './routes/accounts.js'
 import { historyRoutes } from './routes/history.js'
 import { pruneHistory } from './lib/changelog.js'
+import { pruneLoginAttempts } from './lib/login-guard.js'
 import { registerGate } from './lib/gate.js'
 import { pruneSessions } from './lib/auth.js'
 import { disconnect } from './lib/db.js'
@@ -71,6 +72,9 @@ try {
 
   const oldHistory = await pruneHistory()
   if (oldHistory) app.log.info(`${oldHistory} registro(s) de histórico além da retenção removido(s).`)
+
+  const oldAttempts = await pruneLoginAttempts()
+  if (oldAttempts) app.log.info(`${oldAttempts} tentativa(s) de entrada antiga(s) removida(s).`)
 
   await app.listen({ port, host: '0.0.0.0' })
 } catch (error) {

@@ -37,6 +37,7 @@ const ANY_VIEWER = new Set([
 const EXTRA: { method: string; pattern: RegExp; role: AccessRole }[] = [
   { method: 'GET', pattern: /^\/api\/test-users\/[^/]+\/password$/, role: 'editor' },
   { method: 'GET', pattern: /^\/api\/test-users\/credential-accesses$/, role: 'admin' },
+  { method: 'GET', pattern: /^\/api\/accounts\/login-attempts$/, role: 'admin' },
   // Administrar o time é administração, não execução: o papel `editor` é
   // definido como "edita cenários e bugs", e mexer no diretório de pessoas
   // (inclusive mesclar, que é irreversível) está fora disso.

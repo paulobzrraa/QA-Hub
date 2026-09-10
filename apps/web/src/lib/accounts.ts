@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
-import type { Account, PasswordReset } from './types'
+import type { Account, LoginAttemptsResult, PasswordReset } from './types'
 
 /** Administração de contas de acesso (US-5.1). Só administradores chegam aqui. */
 export function useAccounts() {
@@ -52,5 +52,16 @@ export function useResetPassword() {
   return useMutation({
     mutationFn: (id: string) => api.post<PasswordReset>(`/api/accounts/${id}/reset-password`, {}),
     onSuccess: refresh,
+  })
+}
+
+/** Tentativas de entrada recentes (US-6.2). Só administradores chegam aqui. */
+export function useLoginAttempts(onlyFailed: boolean) {
+  return useQuery({
+    queryKey: ['login-attempts', onlyFailed],
+    queryFn: () => api.get<LoginAttemptsResult>(`/api/accounts/login-attempts${api.query({ onlyFailed: onlyFailed ? 'true' : undefined })}`),
+    // A tela fica aberta observando um ataque em andamento — precisa de dado
+    // fresco sem que alguém precise ficar recarregando a página.
+    refetchInterval: 15_000,
   })
 }

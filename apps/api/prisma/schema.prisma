@@ -358,3 +358,27 @@ model ChangeLog {
   @@index([entity, entityId, createdAt])
   @@index([createdAt])
 }
+
+/// Tentativa de entrada (US-6.2).
+///
+/// Guarda tanto a recusada quanto a bem-sucedida: é a recusada que interessa
+/// para o bloqueio, e a bem-sucedida é o que zera a contagem — sem ela, quem
+/// erra três vezes e acerta na quarta continuaria pagando o atraso.
+///
+/// `email` é gravado mesmo quando não existe conta alguma com ele. Isso é
+/// deliberado: o bloqueio precisa se comportar igual para e-mail existente e
+/// inexistente, senão a própria trava vira o vazamento que o login evita.
+model LoginAttempt {
+  id String @id @default(cuid())
+
+  email     String
+  ipAddress String
+  userAgent String?
+  success   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+  @@index([createdAt])
+}

@@ -252,4 +252,26 @@ export interface HistoryResult {
 export interface PasswordReset {
   account: { id: string; name: string; email: string }
   provisionalPassword: string
+  /** Tentativas recusadas que estavam pesando no bloqueio e foram apagadas. */
+  clearedAttempts: number
+}
+
+/** Uma tentativa de entrada, recusada ou não (US-6.2). */
+export interface LoginAttempt {
+  id: string
+  email: string
+  ipAddress: string
+  userAgent: string | null
+  success: boolean
+  createdAt: string
+}
+
+export interface LoginAttemptsResult {
+  attempts: LoginAttempt[]
+  limits: {
+    WINDOW_MINUTES: number
+    SOFT_THRESHOLD: number
+    HARD_THRESHOLD: number
+    BLOCK_MINUTES: number
+  }
 }

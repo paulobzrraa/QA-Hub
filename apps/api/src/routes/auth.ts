@@ -6,6 +6,7 @@ import {
   assertAllowedEmail, clearSessionCookie, createSession, hashPassword, requireViewer,
   revokeSessions, setSessionCookie, verifyPassword, SESSION_COOKIE,
 } from '../lib/auth.js'
+import { guardLoginAttempt, recordAttempt } from '../lib/login-guard.js'
 
 /** O que o front precisa saber sobre quem está logado. */
 const VIEWER_SELECT = {
@@ -64,8 +65,20 @@ export function authRoutes(app: FastifyInstance) {
   })
 
   app.post('/api/auth/login', async (request, reply) => {
+    const context = {
+      email: typeof (request.body as { email?: unknown })?.email === 'string'
+        ? String((request.body as { email: string }).email).trim().toLowerCase()
+        : '',
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'] ?? null,
+    }
+
     try {
       const data = parse(loginInput, request.body)
+
+      // Antes de conferir a senha (US-6.2): a trava vale mesmo quando a senha
+      // está certa, senão seria contornável pelo próprio acerto.
+      await guardLoginAttempt(context)
 
       const account = await prisma.account.findUnique({ where: { email: data.email } })
 
@@ -89,8 +102,13 @@ export function authRoutes(app: FastifyInstance) {
       const session = await createSession(account.id, request)
       setSessionCookie(reply, session.token, session.expiresAt)
 
+      await recordAttempt(context, true)
       return await prisma.account.findUnique({ where: { id: account.id }, select: VIEWER_SELECT })
     } catch (error) {
+      // Registra a recusa — menos quando a própria trava já barrou, para uma
+      // tentativa bloqueada não realimentar o bloqueio indefinidamente.
+      const status = error instanceof HttpError ? error.status : 500
+      if (status !== 429) await recordAttempt(context, false).catch(() => null)
       return sendError(reply, error)
     }
   })

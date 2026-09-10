@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { accountInput, accountUpdate } from '@qahub/shared'
 import { prisma } from '../lib/db.js'
 import { parse, sendError, HttpError } from '../lib/http.js'
@@ -6,6 +7,7 @@ import {
   assertAllowedEmail, generateProvisionalPassword, hashPassword, requireRole, revokeSessions,
 } from '../lib/auth.js'
 import { recordChanges, recordEvent, ACCOUNT_FIELDS } from '../lib/changelog.js'
+import { clearFailures, LOGIN_GUARD } from '../lib/login-guard.js'
 
 const ACCOUNT_SELECT = {
   id: true,
@@ -20,6 +22,11 @@ const ACCOUNT_SELECT = {
   createdAt: true,
   _count: { select: { sessions: true } },
 } as const
+
+const attemptsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  onlyFailed: z.enum(['true', 'false']).default('false'),
+})
 
 /** Administração de contas de acesso (US-5.1). Só para administradores. */
 export function accountRoutes(app: FastifyInstance) {
@@ -149,6 +156,10 @@ export function accountRoutes(app: FastifyInstance) {
       // A senha antiga deixou de valer: sessão aberta com ela também.
       await revokeSessions(id)
 
+      // Se o administrador está justamente ajudando alguém a voltar, deixar a
+      // conta travada pelo freio de tentativas (US-6.2) seria absurdo.
+      const unblocked = await clearFailures(account.email)
+
       await recordEvent({
         entity: 'account',
         entityId: id,
@@ -161,7 +172,35 @@ export function accountRoutes(app: FastifyInstance) {
       return {
         account: { id: account.id, name: account.name, email: account.email },
         provisionalPassword: provisional,
+        /** Quantas tentativas recusadas foram apagadas ao destravar. */
+        clearedAttempts: unblocked,
       }
+    } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
+  /**
+   * Tentativas de entrada (US-6.2). Só administradores.
+   *
+   * Devolve também os limites em vigor, para a tela explicar o comportamento
+   * sem repetir números que só existem no servidor.
+   */
+  app.get('/api/accounts/login-attempts', async (request, reply) => {
+    try {
+      requireRole(request, 'admin')
+      const { limit, onlyFailed } = parse(attemptsQuery, request.query)
+
+      const attempts = await prisma.loginAttempt.findMany({
+        where: onlyFailed === 'true' ? { success: false } : {},
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          id: true, email: true, ipAddress: true, userAgent: true,
+          success: true, createdAt: true,
+        },
+      })
+      return { attempts, limits: LOGIN_GUARD }
     } catch (error) {
       return sendError(reply, error)
     }
