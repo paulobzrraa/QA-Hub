@@ -15,7 +15,10 @@ Fases 1 a 4 concluídas, mais as US-5.1 e 5.2 da Fase 5:
 | 4 | Massa de teste com credenciais cifradas, evidências, exportação xlsx e gestão de pessoas |
 | 5 | Autenticação com papéis e histórico de alterações (faltam Postgres/deploy e Jira) |
 
-O que ainda não foi feito está em [`docs/backlog.md`](docs/backlog.md).
+O que ainda não foi feito está em [`docs/backlog.md`](docs/backlog.md), e as
+melhorias propostas sobre o que já existe em
+[`docs/backlog-melhorias.md`](docs/backlog-melhorias.md) — que
+`scripts/backlog-para-github.sh` transforma em issues e num GitHub Project.
 
 ## Stack
 
